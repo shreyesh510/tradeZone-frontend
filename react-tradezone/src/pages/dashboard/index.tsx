@@ -4,6 +4,7 @@ import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { logoutUser } from '../../redux/slices/authSlice';
 import LiveChart from '../../components/LiveChart';
 import { io, Socket } from 'socket.io-client';
+import config from '../../config/env';
 
 interface Message {
   id: string;
@@ -55,7 +56,7 @@ const Dashboard = memo(function Dashboard() {
     if (!user) return;
 
     console.log('🔌 Attempting to connect to chat server...');
-    const newSocket = io('http://localhost:3000', {
+    const newSocket = io(config.API_BASE_URL, {
       auth: {
         user: {
           userId: user.id,
@@ -72,7 +73,7 @@ const Dashboard = memo(function Dashboard() {
       newSocket.emit('getOnlineUsers');
       
       // Load previous messages
-      fetch('http://localhost:3000/chat/messages')
+      fetch(`${config.API_BASE_URL}/chat/messages`)
         .then(response => response.json())
         .then(data => {
           console.log('📚 Loaded previous messages:', data);
