@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAppSelector } from '../redux/hooks';
 import { io, Socket } from 'socket.io-client';
+import config from '../config/env';
 
 interface Message {
   id: string;
@@ -54,7 +55,7 @@ const Chat: React.FC = () => {
   useEffect(() => {
     if (!user) return;
 
-    const newSocket = io('http://localhost:3000', {
+    const newSocket = io(config.API_BASE_URL, {
       auth: {
         user: {
           userId: user.id,
