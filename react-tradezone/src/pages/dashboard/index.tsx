@@ -65,6 +65,8 @@ const Dashboard = memo(function Dashboard() {
       },
       transports: ['websocket', 'polling'],
       timeout: 10000,
+      withCredentials: true,
+      forceNew: true,
     });
 
     newSocket.on('connect', () => {
