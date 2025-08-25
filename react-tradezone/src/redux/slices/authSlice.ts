@@ -80,10 +80,22 @@ const authSlice = createSlice({
       const testToken = localStorage.getItem('testToken');
       const user = localStorage.getItem('user');
       
+      console.log('🔄 Initializing auth from localStorage:', { testToken: !!testToken, user: !!user });
+      
       if (testToken && user) {
-        state.testToken = testToken;
-        state.user = JSON.parse(user);
-        state.isAuthenticated = true;
+        try {
+          state.testToken = testToken;
+          state.user = JSON.parse(user);
+          state.isAuthenticated = true;
+          console.log('✅ Auth initialized successfully:', state.user);
+        } catch (error) {
+          console.error('❌ Error parsing user data:', error);
+          // Clear invalid data
+          localStorage.removeItem('testToken');
+          localStorage.removeItem('user');
+        }
+      } else {
+        console.log('❌ No valid credentials found in localStorage');
       }
     },
   },

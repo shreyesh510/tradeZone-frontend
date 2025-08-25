@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import { AdvancedChart } from 'react-tradingview-embed';
 
-export default function LiveChart() {
+const LiveChart = memo(function LiveChart() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
@@ -93,4 +93,6 @@ export default function LiveChart() {
       )}
     </div>
   );
-}
+});
+
+export default LiveChart;

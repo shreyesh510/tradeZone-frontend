@@ -1,8 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppDispatch } from '../../redux/hooks';
-import { login } from '../../redux/slices/authSlice';
-import { authUtils } from '../../redux/slices/authSlice';
+import { loginUser } from '../../redux/slices/authSlice';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -14,29 +13,21 @@ export default function Login() {
   const dispatch = useAppDispatch();
 
   // Load saved credentials on component mount
-  useEffect(() => {
-    const savedCredentials = authUtils.getSavedCredentials();
-    if (savedCredentials) {
-      setEmail(savedCredentials.email);
-      setPassword(savedCredentials.password);
-      setRememberMe(true);
-    }
-  }, []);
+  // useEffect(() => {
+  //   // Optionally load saved credentials here if you implement that utility
+  // }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-
-    // Simulate API call
-    setTimeout(() => {
-      dispatch(login({ 
-        email, 
-        password, 
-        rememberMe 
-      }));
-      navigate('/dashboard');
+    try {
+      const resultAction = await dispatch(loginUser({ email, password }));
+      if (loginUser.fulfilled.match(resultAction)) {
+        navigate('/dashboard');
+      }
+    } finally {
       setIsLoading(false);
-    }, 1000);
+    }
   };
 
   const toggleTheme = () => {

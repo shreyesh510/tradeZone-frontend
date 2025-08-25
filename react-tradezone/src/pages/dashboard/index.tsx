@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useCallback, useMemo, memo } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
-import { logout } from '../../redux/slices/authSlice';
+import { logoutUser } from '../../redux/slices/authSlice';
 import LiveChart from '../../components/LiveChart';
 
-export default function Dashboard() {
+const Dashboard = memo(function Dashboard() {
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState([
     {
@@ -38,11 +38,11 @@ export default function Dashboard() {
   const user = useAppSelector((state: any) => state.auth.user);
 
   const handleLogout = () => {
-    dispatch(logout());
+    dispatch(logoutUser());
     navigate('/');
   };
 
-  const handleSendMessage = () => {
+  const handleSendMessage = useCallback(() => {
     if (message.trim()) {
       const newMessage = {
         id: messages.length + 1,
@@ -51,7 +51,7 @@ export default function Dashboard() {
         timestamp: new Date().toLocaleTimeString()
       };
       
-      setMessages([...messages, newMessage]);
+      setMessages(prev => [...prev, newMessage]);
       setMessage('');
 
       // Simulate AI response
@@ -65,20 +65,25 @@ export default function Dashboard() {
         setMessages(prev => [...prev, aiResponse]);
       }, 1000);
     }
-  };
+  }, [message, messages.length]);
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyPress = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
     }
-  };
+  }, [handleSendMessage]);
+
+  const handleTrendsClick = useCallback(() => setMessage('What are the current trends?'), []);
+  const handleForecastClick = useCallback(() => setMessage('Show me the forecast'), []);
+  const handleAnalysisClick = useCallback(() => setMessage('Analyze the patterns'), []);
+  const handleMessageChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => setMessage(e.target.value), []);
 
   return (
     <div className="h-screen bg-gray-900 flex">
       {/* Left side - Chart (75%) */}
       <div className="w-3/4 flex flex-col">
-        <LiveChart />
+        <LiveChart key="live-chart" />
       </div>
 
       {/* Right side - Discussion Panel (25%) */}
@@ -140,14 +145,14 @@ export default function Dashboard() {
         {/* Discussion Input */}
         <div className="p-4 border-t border-gray-700">
           <div className="flex space-x-2">
-            <input
-              type="text"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder="Ask about the data..."
-              className="flex-1 bg-gray-700 text-white rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
-            />
+                         <input
+               type="text"
+               value={message}
+               onChange={handleMessageChange}
+               onKeyPress={handleKeyPress}
+               placeholder="Ask about the data..."
+               className="flex-1 bg-gray-700 text-white rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
+             />
             <button 
               onClick={handleSendMessage}
               disabled={!message.trim()}
@@ -159,24 +164,24 @@ export default function Dashboard() {
           
           {/* Quick Actions */}
           <div className="mt-3 flex flex-wrap gap-2">
-            <button 
-              onClick={() => setMessage('What are the current trends?')}
-              className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded hover:bg-gray-600 transition-colors"
-            >
-              Trends
-            </button>
-            <button 
-              onClick={() => setMessage('Show me the forecast')}
-              className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded hover:bg-gray-600 transition-colors"
-            >
-              Forecast
-            </button>
-            <button 
-              onClick={() => setMessage('Analyze the patterns')}
-              className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded hover:bg-gray-600 transition-colors"
-            >
-              Analysis
-            </button>
+                         <button 
+               onClick={handleTrendsClick}
+               className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded hover:bg-gray-600 transition-colors"
+             >
+               Trends
+             </button>
+             <button 
+               onClick={handleForecastClick}
+               className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded hover:bg-gray-600 transition-colors"
+             >
+               Forecast
+             </button>
+             <button 
+               onClick={handleAnalysisClick}
+               className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded hover:bg-gray-600 transition-colors"
+             >
+               Analysis
+             </button>
           </div>
         </div>
 
@@ -186,6 +191,12 @@ export default function Dashboard() {
             <span>Last login: {user?.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Today'}</span>
             <span>Theme: {user?.preferences?.theme || 'dark'}</span>
           </div>
+          <Link
+            to="/chat"
+            className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors text-sm text-center block"
+          >
+            💬 Open Chat
+          </Link>
           <button
             onClick={handleLogout}
             className="w-full bg-red-600 text-white py-2 px-4 rounded-lg hover:bg-red-700 transition-colors text-sm"
@@ -193,7 +204,9 @@ export default function Dashboard() {
             Logout
           </button>
         </div>
-      </div>
-    </div>
-  );
-}
+             </div>
+     </div>
+   );
+ });
+
+export default Dashboard;

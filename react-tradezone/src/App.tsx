@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { initializeAuth } from './redux/slices/authSlice';
@@ -6,6 +6,7 @@ import type { AppDispatch, RootState } from './redux/store';
 import Login from './components/Login';
 import Dashboard from './pages/dashboard';
 import LiveChart from './components/LiveChart';
+import Chat from './components/Chat';
 import './index.css';
 
 // Protected Route Component
@@ -22,21 +23,42 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 function App() {
   const dispatch = useDispatch<AppDispatch>();
   const { isAuthenticated, user } = useSelector((state: RootState) => state.auth);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
-    // Debug: Check localStorage
+    // Check localStorage for existing credentials
     const testToken = localStorage.getItem('testToken');
     const userData = localStorage.getItem('user');
-    console.log('🔍 Debug - localStorage check:', { testToken: !!testToken, userData: !!userData });
     
-    // Initialize authentication from localStorage on app start
-    dispatch(initializeAuth());
+    console.log('🔍 Checking localStorage:', { 
+      hasToken: !!testToken, 
+      hasUser: !!userData,
+      token: testToken ? testToken.substring(0, 20) + '...' : null,
+      user: userData ? JSON.parse(userData) : null
+    });
+
+    if (testToken && userData) {
+      // User has credentials, initialize auth state
+      dispatch(initializeAuth());
+      console.log('✅ Credentials found, initializing auth...');
+    } else {
+      console.log('❌ No credentials found, user needs to login');
+    }
+    
+    setIsInitialized(true);
   }, [dispatch]);
 
-  // Debug: Log authentication state
-  useEffect(() => {
-    console.log('🔍 Debug - Auth state:', { isAuthenticated, user });
-  }, [isAuthenticated, user]);
+  // Show loading while checking credentials
+  if (!isInitialized) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Checking authentication...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Router>
@@ -61,6 +83,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <LiveChart />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/chat" 
+            element={
+              <ProtectedRoute>
+                <Chat />
               </ProtectedRoute>
             } 
           />

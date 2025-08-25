@@ -3,10 +3,11 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { loginUser, clearError } from '../redux/slices/authSlice';
 import type { AppDispatch, RootState } from '../redux/store';
+import ConnectionTest from './ConnectionTest';
 
 const Login: React.FC = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('test@gmail.com');
+  const [password, setPassword] = useState('test@123');
   const [showPassword, setShowPassword] = useState(false);
 
   const dispatch = useDispatch<AppDispatch>();
@@ -21,35 +22,34 @@ const Login: React.FC = () => {
   }, [isAuthenticated, navigate]);
 
   useEffect(() => {
-    // Clear any previous errors when component mounts
     dispatch(clearError());
   }, [dispatch]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleLogin = async () => {
+    console.log('🔐 Login attempt:', { email, password: '***' });
     
     if (!email || !password) {
+      console.log('❌ Missing email or password');
       return;
     }
 
     try {
-      await dispatch(loginUser({ email, password })).unwrap();
-      // Navigation will be handled by useEffect when isAuthenticated changes
+      console.log('📡 Dispatching login action...');
+      const result = await dispatch(loginUser({ email, password })).unwrap();
+      console.log('✅ Login successful!', result);
     } catch (error) {
-      // Error is already handled by the thunk and stored in state
-      console.error('Login failed:', error);
+      console.error('❌ Login failed:', error);
     }
   };
 
   const handleDemoLogin = async () => {
-    // Demo login with one of the pre-created users
-    setEmail('vivekkolhe@gmail.com');
-    setPassword('Vivek@123');
+    setEmail('test@gmail.com');
+    setPassword('test@123');
     
     try {
       await dispatch(loginUser({ 
-        email: 'vivekkolhe@gmail.com', 
-        password: 'Vivek@123' 
+        email: 'test@gmail.com', 
+        password: 'test@123' 
       })).unwrap();
     } catch (error) {
       console.error('Demo login failed:', error);
@@ -59,13 +59,15 @@ const Login: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900 flex items-center justify-center p-4">
       <div className="max-w-md w-full space-y-8">
+        <ConnectionTest />
+        
         <div className="bg-white rounded-2xl shadow-2xl p-8">
           <div className="text-center">
             <h2 className="text-3xl font-bold text-gray-900 mb-2">Welcome Back</h2>
             <p className="text-gray-600">Sign in to your account</p>
           </div>
 
-          <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+          <div className="mt-8 space-y-6">
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
                 {error}
@@ -78,10 +80,7 @@ const Login: React.FC = () => {
               </label>
               <input
                 id="email"
-                name="email"
                 type="email"
-                autoComplete="email"
-                required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
@@ -96,10 +95,7 @@ const Login: React.FC = () => {
               <div className="relative">
                 <input
                   id="password"
-                  name="password"
                   type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200 pr-12"
@@ -128,7 +124,6 @@ const Login: React.FC = () => {
               <div className="flex items-center">
                 <input
                   id="remember-me"
-                  name="remember-me"
                   type="checkbox"
                   className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
@@ -146,8 +141,9 @@ const Login: React.FC = () => {
 
             <div>
               <button
-                type="submit"
+                type="button"
                 disabled={loading}
+                onClick={handleLogin}
                 className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition duration-200"
               >
                 {loading ? (
@@ -183,7 +179,7 @@ const Login: React.FC = () => {
                 </a>
               </p>
             </div>
-          </form>
+          </div>
         </div>
       </div>
     </div>
