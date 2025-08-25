@@ -30,6 +30,7 @@ const Dashboard = memo(function Dashboard() {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
 
@@ -67,6 +68,7 @@ const Dashboard = memo(function Dashboard() {
 
     newSocket.on('connect', () => {
       console.log('✅ Connected to chat server');
+      setConnectionStatus('connected');
       newSocket.emit('getOnlineUsers');
       
       // Load previous messages
@@ -85,10 +87,12 @@ const Dashboard = memo(function Dashboard() {
 
     newSocket.on('disconnect', () => {
       console.log('❌ Disconnected from chat server');
+      setConnectionStatus('disconnected');
     });
 
     newSocket.on('connect_error', (error) => {
       console.log('❌ Connection error:', error);
+      setConnectionStatus('error');
     });
 
     newSocket.on('onlineUsers', (users: OnlineUser[]) => {
@@ -98,7 +102,24 @@ const Dashboard = memo(function Dashboard() {
 
     newSocket.on('newMessage', (message: Message) => {
       console.log('💬 New message received:', message);
-      setMessages(prev => [...prev, message]);
+      setMessages(prev => {
+        // Check if this is a response to our own message (replace temp message)
+        const tempMessageIndex = prev.findIndex(msg => 
+          msg.id.startsWith('temp-') && 
+          msg.content === message.content && 
+          msg.senderId === message.senderId
+        );
+        
+        if (tempMessageIndex !== -1) {
+          // Replace temp message with real message
+          const newMessages = [...prev];
+          newMessages[tempMessageIndex] = message;
+          return newMessages;
+        } else {
+          // Add new message from other users
+          return [...prev, message];
+        }
+      });
       
       // Mark messages as read if it's a direct message to current user
       if (message.receiverId === user.id && !message.readAt) {
@@ -108,6 +129,21 @@ const Dashboard = memo(function Dashboard() {
 
     newSocket.on('messageSent', (message: Message) => {
       console.log('✅ Message sent confirmation:', message);
+      // Replace temp message with confirmed message
+      setMessages(prev => {
+        const tempMessageIndex = prev.findIndex(msg => 
+          msg.id.startsWith('temp-') && 
+          msg.content === message.content && 
+          msg.senderId === message.senderId
+        );
+        
+        if (tempMessageIndex !== -1) {
+          const newMessages = [...prev];
+          newMessages[tempMessageIndex] = message;
+          return newMessages;
+        }
+        return prev;
+      });
     });
 
     newSocket.on('messagesRead', (data: { readerId: string; readerName: string }) => {
@@ -186,11 +222,42 @@ const Dashboard = memo(function Dashboard() {
 
     console.log('📤 Emitting sendMessage event:', messageData);
     
+    // Add message to UI immediately for better UX
+    const tempMessage: Message = {
+      id: `temp-${Date.now()}`,
+      content: newMessage,
+      senderId: user.id,
+      senderName: user.name,
+      createdAt: new Date(),
+      messageType: 'text',
+    };
+    
+    setMessages(prev => [...prev, tempMessage]);
+    
+    // Set timeout to remove temp message if not confirmed within 5 seconds
+    setTimeout(() => {
+      setMessages(prev => {
+        const messageExists = prev.find(msg => 
+          msg.id.startsWith('temp-') && 
+          msg.content === tempMessage.content && 
+          msg.senderId === tempMessage.senderId
+        );
+        
+        if (messageExists) {
+          console.log('⚠️ Removing unconfirmed temp message:', tempMessage.content);
+          return prev.filter(msg => msg.id !== tempMessage.id);
+        }
+        return prev;
+      });
+    }, 5000);
+    
     try {
       socket.emit('sendMessage', messageData, (response: any) => {
         console.log('📤 Message send response:', response);
         if (response?.error) {
           console.error('❌ Error sending message:', response.error);
+          // Remove temp message if there's an error
+          setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id));
         }
       });
       
@@ -199,6 +266,8 @@ const Dashboard = memo(function Dashboard() {
       setIsTyping(false);
     } catch (error) {
       console.error('❌ Error emitting message:', error);
+      // Remove temp message if there's an error
+      setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id));
     }
   }, [newMessage, socket, user]);
 
@@ -307,8 +376,15 @@ const Dashboard = memo(function Dashboard() {
            <div className="p-4 border-b border-gray-700">
              <div className="flex justify-between items-center mb-2">
                <h2 className="text-lg font-bold text-white">Global Chat</h2>
-               <div className="text-sm text-green-400">
-                 {onlineUsers.length + 1} online
+               <div className="flex items-center space-x-2">
+                 <div className={`w-2 h-2 rounded-full ${
+                   connectionStatus === 'connected' ? 'bg-green-400' :
+                   connectionStatus === 'connecting' ? 'bg-yellow-400' :
+                   connectionStatus === 'error' ? 'bg-red-400' : 'bg-gray-400'
+                 }`}></div>
+                 <div className="text-sm text-green-400">
+                   {onlineUsers.length + 1} online
+                 </div>
                </div>
              </div>
              
@@ -331,6 +407,19 @@ const Dashboard = memo(function Dashboard() {
                  {typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...
                </p>
              )}
+             
+             {/* Debug Info */}
+             <div className="text-xs text-gray-500 mt-1">
+               Status: {connectionStatus} | Socket: {socket?.connected ? 'Connected' : 'Disconnected'} | ID: {socket?.id || 'None'}
+               {connectionStatus === 'error' && (
+                 <button 
+                   onClick={() => window.location.reload()}
+                   className="ml-2 text-blue-400 hover:text-blue-300"
+                 >
+                   Reconnect
+                 </button>
+               )}
+             </div>
            </div>
 
           {/* Messages */}
@@ -348,25 +437,29 @@ const Dashboard = memo(function Dashboard() {
                     </div>
                   )}
                   <div className={`flex ${message.senderId === user?.id ? 'justify-end' : 'justify-start'}`}>
-                    <div
-                      className={`max-w-[85%] px-3 py-2 rounded-lg ${
-                        message.messageType === 'system'
-                          ? 'bg-yellow-600 text-white mx-auto'
-                          : message.senderId === user?.id
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-700 text-gray-300'
-                      }`}
-                    >
+                                         <div
+                       className={`max-w-[85%] px-3 py-2 rounded-lg ${
+                         message.messageType === 'system'
+                           ? 'bg-yellow-600 text-white mx-auto'
+                           : message.senderId === user?.id
+                           ? message.id.startsWith('temp-') 
+                             ? 'bg-blue-400 text-white opacity-75' // Temporary message styling
+                             : 'bg-blue-600 text-white'
+                           : 'bg-gray-700 text-gray-300'
+                       }`}
+                     >
                       {message.messageType !== 'system' && (
                         <div className="text-xs font-medium mb-1">{message.senderName}</div>
                       )}
                       <div className="text-sm">{message.content}</div>
-                      <div className="flex items-center justify-between text-xs opacity-75 mt-1">
-                        <span>{formatTime(message.createdAt)}</span>
-                        {getMessageStatus(message) && (
-                          <span className="ml-2">{getMessageStatus(message)}</span>
-                        )}
-                      </div>
+                                             <div className="flex items-center justify-between text-xs opacity-75 mt-1">
+                         <span>{formatTime(message.createdAt)}</span>
+                         {message.id.startsWith('temp-') ? (
+                           <span className="ml-2 text-yellow-300">Sending...</span>
+                         ) : getMessageStatus(message) ? (
+                           <span className="ml-2">{getMessageStatus(message)}</span>
+                         ) : null}
+                       </div>
                     </div>
                   </div>
                 </div>
