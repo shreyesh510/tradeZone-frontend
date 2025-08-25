@@ -6,7 +6,6 @@ import type { AppDispatch, RootState } from './redux/store';
 import Login from './components/Login';
 import Dashboard from './pages/dashboard';
 import LiveChart from './components/LiveChart';
-import Chat from './components/Chat';
 import './index.css';
 
 // Protected Route Component
