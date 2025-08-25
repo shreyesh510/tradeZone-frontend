@@ -33,11 +33,11 @@ const Dashboard = memo(function Dashboard() {
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const typingTimeoutRef = useRef<NodeJS.Timeout>();
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
-  const user = useAppSelector((state: any) => state.auth.user);
+  const user = useAppSelector((state) => state.auth.user);
 
   const handleLogout = useCallback(() => {
     dispatch(logoutUser());

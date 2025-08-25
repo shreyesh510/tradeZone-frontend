@@ -22,7 +22,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
 function App() {
   const dispatch = useDispatch<AppDispatch>();
-  const { isAuthenticated, user } = useSelector((state: RootState) => state.auth);
+  const { isAuthenticated } = useSelector((state: RootState) => state.auth);
   const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {

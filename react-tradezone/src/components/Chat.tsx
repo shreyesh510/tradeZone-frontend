@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useSelector } from 'react-redux';
+import { useAppSelector } from '../redux/hooks';
 import { io, Socket } from 'socket.io-client';
-import type { RootState } from '../redux/store';
 
 interface Message {
   id: string;
@@ -41,8 +40,8 @@ const Chat: React.FC = () => {
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [currentView, setCurrentView] = useState<'global' | 'direct'>('global');
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const typingTimeoutRef = useRef<NodeJS.Timeout>();
-  const { user, testToken } = useSelector((state: RootState) => state.auth);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const { user } = useAppSelector((state) => state.auth);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
