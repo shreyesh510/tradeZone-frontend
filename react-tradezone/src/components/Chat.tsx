@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSelector } from 'react-redux';
 import { io, Socket } from 'socket.io-client';
 import type { RootState } from '../redux/store';
@@ -10,30 +10,51 @@ interface Message {
   senderName: string;
   receiverId?: string;
   roomId?: string;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: Date;
+  readAt?: Date;
+  messageType?: 'text' | 'image' | 'file' | 'system';
 }
 
 interface OnlineUser {
   userId: string;
-  socketId: string;
   userName: string;
+  socketId: string;
+}
+
+interface UserChatSummary {
+  userId: string;
+  userName: string;
+  lastMessage?: string;
+  lastMessageTime?: Date;
+  unreadCount: number;
+  isOnline: boolean;
 }
 
 const Chat: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  const [socket, setSocket] = useState<Socket | null>(null);
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
+  const [chatSummaries, setChatSummaries] = useState<UserChatSummary[]>([]);
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [isTyping, setIsTyping] = useState(false);
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const [currentView, setCurrentView] = useState<'global' | 'direct'>('global');
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  
+  const typingTimeoutRef = useRef<NodeJS.Timeout>();
   const { user, testToken } = useSelector((state: RootState) => state.auth);
 
-  useEffect(() => {
-    if (!user || !testToken) return;
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
 
-    // Initialize Socket.IO connection
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, scrollToBottom]);
+
+  useEffect(() => {
+    if (!user) return;
+
     const newSocket = io('http://localhost:3000', {
       auth: {
         user: {
@@ -43,198 +64,343 @@ const Chat: React.FC = () => {
       },
     });
 
-    setSocket(newSocket);
-
-    // Socket event listeners
     newSocket.on('connect', () => {
-      console.log('🔌 Connected to chat server');
+      console.log('Connected to chat server');
       newSocket.emit('getOnlineUsers');
-    });
-
-    newSocket.on('newMessage', (message: Message) => {
-      console.log('💬 New message received:', message);
-      setMessages(prev => [...prev, message]);
-    });
-
-    newSocket.on('messageSent', (message: Message) => {
-      console.log('✅ Message sent:', message);
+      newSocket.emit('getUserChatSummary');
     });
 
     newSocket.on('onlineUsers', (users: OnlineUser[]) => {
-      console.log('👥 Online users:', users);
       setOnlineUsers(users.filter(u => u.userId !== user.id));
     });
 
+    newSocket.on('userChatSummary', (summaries: UserChatSummary[]) => {
+      setChatSummaries(summaries);
+    });
+
+    newSocket.on('newMessage', (message: Message) => {
+      setMessages(prev => [...prev, message]);
+      
+      // Mark messages as read if it's a direct message to current user
+      if (message.receiverId === user.id && !message.readAt) {
+        newSocket.emit('markMessagesAsRead', { senderId: message.senderId });
+      }
+    });
+
+    newSocket.on('messagesRead', (data: { readerId: string; readerName: string }) => {
+      setMessages(prev => prev.map(msg => 
+        msg.senderId === data.readerId && !msg.readAt 
+          ? { ...msg, readAt: new Date() }
+          : msg
+      ));
+    });
+
     newSocket.on('userOnline', (user: OnlineUser) => {
-      console.log('🟢 User online:', user);
-      setOnlineUsers(prev => [...prev.filter(u => u.userId !== user.userId), user]);
+      setOnlineUsers(prev => {
+        const exists = prev.find(u => u.userId === user.userId);
+        if (!exists) {
+          return [...prev, user];
+        }
+        return prev;
+      });
+      
+      setChatSummaries(prev => prev.map(summary => 
+        summary.userId === user.userId 
+          ? { ...summary, isOnline: true }
+          : summary
+      ));
     });
 
     newSocket.on('userOffline', (user: OnlineUser) => {
-      console.log('🔴 User offline:', user);
       setOnlineUsers(prev => prev.filter(u => u.userId !== user.userId));
+      
+      setChatSummaries(prev => prev.map(summary => 
+        summary.userId === user.userId 
+          ? { ...summary, isOnline: false }
+          : summary
+      ));
     });
 
-    // Load existing messages
-    loadMessages();
+    newSocket.on('userTyping', (data: { userId: string; userName: string; isTyping: boolean }) => {
+      if (data.isTyping) {
+        setTypingUsers(prev => [...prev, data.userName]);
+      } else {
+        setTypingUsers(prev => prev.filter(name => name !== data.userName));
+      }
+    });
+
+    newSocket.on('systemMessage', (message: Message) => {
+      setMessages(prev => [...prev, message]);
+    });
+
+    setSocket(newSocket);
 
     return () => {
-      newSocket.disconnect();
+      newSocket.close();
     };
-  }, [user, testToken]);
+  }, [user]);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  const loadMessages = async () => {
-    try {
-      const response = await fetch('http://localhost:3000/chat/messages', {
-        headers: {
-          'Authorization': `Bearer ${testToken}`,
-          'Content-Type': 'application/json',
-        },
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        setMessages(data);
-      }
-    } catch (error) {
-      console.error('Error loading messages:', error);
-    }
-  };
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  const sendMessage = () => {
-    if (!newMessage.trim() || !socket) return;
+  const sendMessage = useCallback(() => {
+    if (!newMessage.trim() || !socket || !user) return;
 
     const messageData = {
       content: newMessage,
       receiverId: selectedUser,
+      messageType: 'text' as const,
     };
 
     socket.emit('sendMessage', messageData);
     setNewMessage('');
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
+    setIsTyping(false);
+    
+    // Clear typing indicator
+    if (selectedUser) {
+      socket.emit('typing', { receiverId: selectedUser, isTyping: false });
     }
-  };
+  }, [newMessage, socket, user, selectedUser]);
 
-  const sendDirectMessage = (receiverId: string, receiverName: string) => {
+  const handleTyping = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setNewMessage(e.target.value);
+    
+    if (!socket || !selectedUser) return;
+
+    if (!isTyping) {
+      setIsTyping(true);
+      socket.emit('typing', { receiverId: selectedUser, isTyping: true });
+    }
+
+    // Clear existing timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    // Set new timeout
+    typingTimeoutRef.current = setTimeout(() => {
+      setIsTyping(false);
+      socket.emit('typing', { receiverId: selectedUser, isTyping: false });
+    }, 1000);
+  }, [socket, selectedUser, isTyping]);
+
+  const sendDirectMessage = useCallback((receiverId: string) => {
     setSelectedUser(receiverId);
-    // You can also create a direct message thread here
-  };
+    setCurrentView('direct');
+    
+    // Mark messages as read when opening chat
+    if (socket) {
+      socket.emit('markMessagesAsRead', { senderId: receiverId });
+    }
+  }, [socket]);
 
-  const filteredMessages = selectedUser 
-    ? messages.filter(msg => 
-        (msg.senderId === user?.id && msg.receiverId === selectedUser) ||
-        (msg.senderId === selectedUser && msg.receiverId === user?.id)
-      )
-    : messages;
+  const formatTime = useCallback((date: Date) => {
+    return new Date(date).toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: true 
+    });
+  }, []);
+
+  const formatDate = useCallback((date: Date) => {
+    const now = new Date();
+    const messageDate = new Date(date);
+    const diffTime = Math.abs(now.getTime() - messageDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 1) {
+      return 'Today';
+    } else if (diffDays === 2) {
+      return 'Yesterday';
+    } else if (diffDays <= 7) {
+      return messageDate.toLocaleDateString([], { weekday: 'long' });
+    } else {
+      return messageDate.toLocaleDateString();
+    }
+  }, []);
+
+  const getMessageStatus = useCallback((message: Message) => {
+    if (message.senderId === user?.id) {
+      if (message.readAt) {
+        return '✓✓ Read';
+      } else if (message.receiverId) {
+        return '✓ Delivered';
+      }
+    }
+    return '';
+  }, [user]);
 
   return (
-    <div className="min-h-screen bg-gray-100 flex">
-      {/* Sidebar - Online Users */}
-      <div className="w-64 bg-white shadow-lg">
-        <div className="p-4 border-b">
-          <h2 className="text-lg font-semibold text-gray-800">Online Users</h2>
-          <p className="text-sm text-gray-600">({onlineUsers.length} online)</p>
-        </div>
-        
-        <div className="p-4">
-          {onlineUsers.map((onlineUser) => (
-            <div
-              key={onlineUser.userId}
-              onClick={() => sendDirectMessage(onlineUser.userId, onlineUser.userName)}
-              className={`flex items-center p-3 rounded-lg cursor-pointer transition-colors ${
-                selectedUser === onlineUser.userId 
-                  ? 'bg-blue-100 border-blue-300' 
-                  : 'hover:bg-gray-50'
+    <div className="h-screen bg-gray-900 flex">
+      {/* Chat Summaries Sidebar */}
+      <div className="w-1/4 bg-gray-800 border-r border-gray-700 flex flex-col">
+        {/* Header */}
+        <div className="p-4 border-b border-gray-700">
+          <h2 className="text-xl font-bold text-white mb-4">Chats</h2>
+          <div className="flex space-x-2">
+            <button
+              onClick={() => setCurrentView('global')}
+              className={`px-3 py-1 rounded text-sm ${
+                currentView === 'global'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
               }`}
             >
-              <div className="w-3 h-3 bg-green-500 rounded-full mr-3"></div>
-              <div>
-                <p className="font-medium text-gray-800">{onlineUser.userName}</p>
-                <p className="text-xs text-gray-500">Online</p>
+              Global
+            </button>
+            <button
+              onClick={() => setCurrentView('direct')}
+              className={`px-3 py-1 rounded text-sm ${
+                currentView === 'direct'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+            >
+              Direct
+            </button>
+          </div>
+        </div>
+
+        {/* Chat List */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          {currentView === 'global' ? (
+            <div
+              onClick={() => setSelectedUser(null)}
+              className={`p-3 rounded-lg cursor-pointer transition-colors ${
+                !selectedUser
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-medium">Global Chat</span>
+                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
               </div>
             </div>
-          ))}
-          
-          {onlineUsers.length === 0 && (
-            <p className="text-gray-500 text-center py-4">No other users online</p>
+          ) : (
+            chatSummaries.map((summary) => (
+              <div
+                key={summary.userId}
+                onClick={() => sendDirectMessage(summary.userId)}
+                className={`p-3 rounded-lg cursor-pointer transition-colors ${
+                  selectedUser === summary.userId
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <div className={`w-2 h-2 rounded-full ${summary.isOnline ? 'bg-green-500' : 'bg-gray-500'}`}></div>
+                    <span className="font-medium">{summary.userName}</span>
+                  </div>
+                  {summary.unreadCount > 0 && (
+                    <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
+                      {summary.unreadCount}
+                    </span>
+                  )}
+                </div>
+                {summary.lastMessage && (
+                  <div className="text-xs opacity-75 mt-1 truncate">
+                    {summary.lastMessage}
+                  </div>
+                )}
+                {summary.lastMessageTime && (
+                  <div className="text-xs opacity-50 mt-1">
+                    {formatTime(summary.lastMessageTime)}
+                  </div>
+                )}
+              </div>
+            ))
           )}
+        </div>
+
+        {/* Online Users */}
+        <div className="p-4 border-t border-gray-700">
+          <h3 className="text-sm font-medium text-gray-400 mb-2">Online Users</h3>
+          <div className="space-y-1">
+            {onlineUsers.map((user) => (
+              <div key={user.userId} className="flex items-center space-x-2 text-sm text-gray-300">
+                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                <span>{user.userName}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Main Chat Area */}
+      {/* Chat Area */}
       <div className="flex-1 flex flex-col">
         {/* Chat Header */}
-        <div className="bg-white shadow-sm border-b p-4">
-          <h1 className="text-xl font-semibold text-gray-800">
-            {selectedUser ? 'Direct Message' : 'Global Chat'}
+        <div className="bg-gray-800 border-b border-gray-700 p-4">
+          <h1 className="text-xl font-bold text-white">
+            {currentView === 'global' 
+              ? 'Global Chat' 
+              : selectedUser 
+                ? `Chat with ${chatSummaries.find(s => s.userId === selectedUser)?.userName || 'User'}`
+                : 'Select a chat'
+            }
           </h1>
-          {selectedUser && (
-            <button
-              onClick={() => setSelectedUser(null)}
-              className="text-sm text-blue-600 hover:text-blue-800"
-            >
-              ← Back to Global Chat
-            </button>
+          {typingUsers.length > 0 && (
+            <p className="text-sm text-gray-400 mt-1">
+              {typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...
+            </p>
           )}
         </div>
 
-        {/* Messages Area */}
+        {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {filteredMessages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex ${message.senderId === user?.id ? 'justify-end' : 'justify-start'}`}
-            >
-              <div
-                className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                  message.senderId === user?.id
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white text-gray-800 shadow-sm'
-                }`}
-              >
-                <div className="flex items-center mb-1">
-                  <span className="text-xs font-medium">
-                    {message.senderName}
-                  </span>
-                  <span className="text-xs opacity-75 ml-2">
-                    {new Date(message.createdAt).toLocaleTimeString()}
-                  </span>
+          {messages.map((message, index) => {
+            const showDate = index === 0 || 
+              new Date(message.createdAt).toDateString() !== 
+              new Date(messages[index - 1]?.createdAt).toDateString();
+
+            return (
+              <div key={message.id}>
+                {showDate && (
+                  <div className="text-center text-xs text-gray-500 my-4">
+                    {formatDate(message.createdAt)}
+                  </div>
+                )}
+                <div className={`flex ${message.senderId === user?.id ? 'justify-end' : 'justify-start'}`}>
+                  <div
+                    className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                      message.messageType === 'system'
+                        ? 'bg-yellow-600 text-white mx-auto'
+                        : message.senderId === user?.id
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-700 text-gray-300'
+                    }`}
+                  >
+                    {message.messageType !== 'system' && (
+                      <div className="text-sm font-medium mb-1">{message.senderName}</div>
+                    )}
+                    <div className="text-sm">{message.content}</div>
+                    <div className="flex items-center justify-between text-xs opacity-75 mt-1">
+                      <span>{formatTime(message.createdAt)}</span>
+                      {getMessageStatus(message) && (
+                        <span className="ml-2">{getMessageStatus(message)}</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <p className="text-sm">{message.content}</p>
               </div>
-            </div>
-          ))}
+            );
+          })}
           <div ref={messagesEndRef} />
         </div>
 
         {/* Message Input */}
-        <div className="bg-white border-t p-4">
-          <div className="flex space-x-4">
+        <div className="bg-gray-800 border-t border-gray-700 p-4">
+          <div className="flex space-x-2">
             <input
               type="text"
               value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder={selectedUser ? "Type a direct message..." : "Type a message..."}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              onChange={handleTyping}
+              onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+              placeholder="Type your message..."
+              className="flex-1 bg-gray-700 text-white rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <button
               onClick={sendMessage}
               disabled={!newMessage.trim()}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Send
             </button>
