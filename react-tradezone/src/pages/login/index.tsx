@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAppDispatch } from '../../redux/hooks';
+import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { loginUser } from '../../redux/slices/authSlice';
 
 export default function Login() {
@@ -11,6 +11,7 @@ export default function Login() {
   const [isDarkMode, setIsDarkMode] = useState(true); // Default to dark mode
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
+  const { error } = useAppSelector((state) => state.auth);
 
   // Load saved credentials on component mount
   // useEffect(() => {
@@ -25,6 +26,9 @@ export default function Login() {
       if (loginUser.fulfilled.match(resultAction)) {
         navigate('/dashboard');
       }
+    } catch (error) {
+      console.error('Login failed:', error);
+      // Error is already handled by Redux slice, no need to refresh page
     } finally {
       setIsLoading(false);
     }
@@ -69,6 +73,11 @@ export default function Login() {
 
         {/* Login Form */}
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+          {error && (
+            <div className={`bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg ${isDarkMode ? 'bg-red-900 border-red-700 text-red-200' : ''}`}>
+              {error}
+            </div>
+          )}
           <div className="rounded-md shadow-sm -space-y-px">
             <div>
               <label htmlFor="email-address" className="sr-only">

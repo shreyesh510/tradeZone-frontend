@@ -56,7 +56,10 @@ api.interceptors.response.use(
       console.log('🔒 Unauthorized, clearing tokens...');
       localStorage.removeItem('testToken');
       localStorage.removeItem('user');
-      window.location.href = '/login';
+      // Don't redirect for login requests to avoid page refresh
+      if (!error.config?.url?.includes('/auth/login')) {
+        window.location.href = '/login';
+      }
     }
     
     if (error.code === 'ECONNREFUSED') {

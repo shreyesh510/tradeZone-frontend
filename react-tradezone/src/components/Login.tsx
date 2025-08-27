@@ -35,10 +35,13 @@ const Login: React.FC = () => {
 
     try {
       console.log('📡 Dispatching login action...');
-      const result = await dispatch(loginUser({ email, password })).unwrap();
-      console.log('✅ Login successful!', result);
+      const resultAction = await dispatch(loginUser({ email, password }));
+      if (loginUser.fulfilled.match(resultAction)) {
+        console.log('✅ Login successful!', resultAction.payload);
+      }
     } catch (error) {
       console.error('❌ Login failed:', error);
+      // Error is already handled by Redux slice, no need to refresh page
     }
   };
 
@@ -47,12 +50,16 @@ const Login: React.FC = () => {
     setPassword('test@123');
     
     try {
-      await dispatch(loginUser({ 
+      const resultAction = await dispatch(loginUser({ 
         email: 'test@gmail.com', 
         password: 'test@123' 
-      })).unwrap();
+      }));
+      if (loginUser.fulfilled.match(resultAction)) {
+        console.log('✅ Demo login successful!', resultAction.payload);
+      }
     } catch (error) {
       console.error('Demo login failed:', error);
+      // Error is already handled by Redux slice, no need to refresh page
     }
   };
 
